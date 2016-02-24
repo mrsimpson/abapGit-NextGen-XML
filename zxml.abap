@@ -170,51 +170,79 @@ ENDCLASS.
 CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
 
   PRIVATE SECTION.
-    METHODS:
-      test FOR TESTING
-      RAISING lcx_exception.
-
-ENDCLASS.
-
-CLASS ltcl_test IMPLEMENTATION.
-
-  METHOD test.
-
-    TYPES: BEGIN OF ty_foobar,
+      TYPES: BEGIN OF ty_less,
              foo TYPE c LENGTH 1,
              bar TYPE c LENGTH 1,
-           END OF ty_foobar.
+           END OF ty_less.
 
     TYPES: BEGIN OF structure,
              foo TYPE c LENGTH 2,
            END OF structure.
 
-    TYPES: BEGIN OF ty_foobar2,
+    TYPES: BEGIN OF ty_more,
              foo TYPE c LENGTH 1,
              bar TYPE c LENGTH 1,
              moo TYPE c LENGTH 1,
              st TYPE structure,
-           END OF ty_foobar2.
+           END OF ty_more.
 
-    DATA: lo_xml TYPE REF TO lcl_xml,
-          lv_xml TYPE string,
-          ls_foobar TYPE ty_foobar,
-          ls_foobar2 TYPE ty_foobar2.
+    METHODS:
+      less_to_more FOR TESTING
+        RAISING lcx_exception,
+      more_to_less FOR TESTING
+        RAISING lcx_exception.
+
+ENDCLASS.
+
+CLASS ltcl_test IMPLEMENTATION.
+
+  METHOD less_to_more.
+
+    DATA: lo_xml  TYPE REF TO lcl_xml,
+          lv_xml  TYPE string,
+          ls_less TYPE ty_less,
+          ls_more TYPE ty_more.
 
 
-    ls_foobar-foo = 'F'.
-    ls_foobar-bar = 'B'.
+    ls_less-foo = 'F'.
+    ls_less-bar = 'B'.
 
     CREATE OBJECT lo_xml.
-    lv_xml = lo_xml->build( ls_foobar ).
+    lv_xml = lo_xml->build( ls_less ).
 
     CREATE OBJECT lo_xml
       EXPORTING
         iv_xml = lv_xml.
-    lo_xml->parse( CHANGING cg_any = ls_foobar2 ).
+    lo_xml->parse( CHANGING cg_any = ls_more ).
 
     cl_abap_unit_assert=>assert_equals(
-        act = ls_foobar2-foo
+        act = ls_more-foo
+        exp = 'F' ).
+
+  ENDMETHOD.
+
+  METHOD more_to_less.
+
+    DATA: lo_xml  TYPE REF TO lcl_xml,
+          lv_xml  TYPE string,
+          ls_less TYPE ty_less,
+          ls_more TYPE ty_more.
+
+
+    ls_more-foo = 'F'.
+    ls_more-bar = 'B'.
+    ls_more-st-foo = 'A'.
+
+    CREATE OBJECT lo_xml.
+    lv_xml = lo_xml->build( ls_more ).
+
+    CREATE OBJECT lo_xml
+      EXPORTING
+        iv_xml = lv_xml.
+    lo_xml->parse( CHANGING cg_any = ls_less ).
+
+    cl_abap_unit_assert=>assert_equals(
+        act = ls_less-foo
         exp = 'F' ).
 
   ENDMETHOD.
