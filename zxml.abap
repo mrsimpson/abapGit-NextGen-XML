@@ -6,14 +6,15 @@ CLASS lcx_exception DEFINITION INHERITING FROM cx_static_check FINAL.
 ENDCLASS.
 
 DEFINE _raise.
-  RAISE EXCEPTION TYPE lcx_exception.                       "#EC NOTEXT
   write: &1.
+  RAISE EXCEPTION TYPE lcx_exception.                       "#EC NOTEXT
 END-OF-DEFINITION.
 
 * todo, how to handle raw XML stuff, like smartforms
-* todo, add minor versionining in constructor
+* todo, add minor versionining in constructor?
 * todo, error handling for CALL TRANSFORMATION
 * todo, check abapGit xml versions
+* todo, normalize?
 
 CLASS lcl_xml DEFINITION ABSTRACT.
 
@@ -25,8 +26,8 @@ CLASS lcl_xml DEFINITION ABSTRACT.
     DATA: mi_ixml    TYPE REF TO if_ixml,
           mi_xml_doc TYPE REF TO if_ixml_document.
 
-    METHODS render
-      RETURNING VALUE(rv_string) TYPE string.
+    METHODS to_xml
+      RETURNING VALUE(rv_xml) TYPE string.
 
     METHODS parse
       IMPORTING iv_xml TYPE string
@@ -50,8 +51,7 @@ CLASS lcl_xml IMPLEMENTATION.
 
     DATA: li_stream_factory TYPE REF TO if_ixml_stream_factory,
           li_istream        TYPE REF TO if_ixml_istream,
-          li_parser         TYPE REF TO if_ixml_parser,
-          li_node           TYPE REF TO if_ixml_node.
+          li_parser         TYPE REF TO if_ixml_parser.
 
 
     ASSERT NOT iv_xml IS INITIAL.
@@ -70,7 +70,7 @@ CLASS lcl_xml IMPLEMENTATION.
 
   ENDMETHOD.
 
-  METHOD render.
+  METHOD to_xml.
 * will render to codepage UTF-16
 
     DATA: li_ostream       TYPE REF TO if_ixml_ostream,
@@ -80,7 +80,7 @@ CLASS lcl_xml IMPLEMENTATION.
 
     li_streamfactory = mi_ixml->create_stream_factory( ).
 
-    li_ostream = li_streamfactory->create_ostream_cstring( rv_string ).
+    li_ostream = li_streamfactory->create_ostream_cstring( rv_xml ).
 
     li_renderer = mi_ixml->create_renderer( ostream  = li_ostream
                                             document = mi_xml_doc ).
@@ -129,8 +129,13 @@ CLASS lcl_xml_output DEFINITION FINAL INHERITING FROM lcl_xml CREATE PUBLIC.
   PUBLIC SECTION.
     METHODS:
       add
-        IMPORTING ig_any TYPE any
+        IMPORTING iv_name TYPE clike
+                  ig_data TYPE any,
+      render
         RETURNING VALUE(rv_xml) TYPE string.
+
+  PRIVATE SECTION.
+    DATA: mt_stab TYPE abap_trans_srcbind_tab.
 
 ENDCLASS.
 
@@ -138,13 +143,22 @@ CLASS lcl_xml_output IMPLEMENTATION.
 
   METHOD add.
 
+    FIELD-SYMBOLS: <ls_stab> LIKE LINE OF mt_stab.
+
+    APPEND INITIAL LINE TO mt_stab ASSIGNING <ls_stab>.
+    <ls_stab>-name = iv_name.
+    GET REFERENCE OF ig_data INTO <ls_stab>-value.
+
+  ENDMETHOD.
+
+  METHOD render.
+
     DATA: li_git  TYPE REF TO if_ixml_element,
           li_abap TYPE REF TO if_ixml_element.
 
 
     CALL TRANSFORMATION id
-      SOURCE data = ig_any
-             foo = ig_any
+      SOURCE (mt_stab)
       RESULT XML mi_xml_doc.
 
     li_abap ?= mi_xml_doc->get_root( )->get_first_child( ).
@@ -155,7 +169,7 @@ CLASS lcl_xml_output IMPLEMENTATION.
     li_git->append_child( li_abap ).
     mi_xml_doc->get_root( )->append_child( li_git ).
 
-    rv_xml = render( ).
+    rv_xml = to_xml( ).
 
   ENDMETHOD.
 
@@ -166,11 +180,15 @@ CLASS lcl_xml_input DEFINITION FINAL INHERITING FROM lcl_xml CREATE PUBLIC.
   PUBLIC SECTION.
     METHODS:
       constructor
-        IMPORTING iv_xml TYPE string
+        IMPORTING iv_xml TYPE clike
         RAISING lcx_exception,
       read
-        CHANGING cg_any TYPE any
+        IMPORTING iv_name TYPE clike
+        CHANGING cg_data TYPE any
         RAISING lcx_exception.
+
+  PRIVATE SECTION.
+    METHODS: fix_xml.
 
 ENDCLASS.
 
@@ -180,10 +198,11 @@ CLASS lcl_xml_input IMPLEMENTATION.
 
     super->constructor( ).
     parse( iv_xml ).
+    fix_xml( ).
 
   ENDMETHOD.
 
-  METHOD read.
+  METHOD fix_xml.
 
     DATA: li_git            TYPE REF TO if_ixml_element,
           li_abap           TYPE REF TO if_ixml_element.
@@ -195,9 +214,22 @@ CLASS lcl_xml_input IMPLEMENTATION.
     mi_xml_doc->get_root( )->remove_child( li_git ).
     mi_xml_doc->get_root( )->append_child( li_abap ).
 
+  ENDMETHOD.
+
+  METHOD read.
+
+    DATA: lt_rtab TYPE abap_trans_resbind_tab.
+
+    FIELD-SYMBOLS: <ls_rtab> LIKE LINE OF lt_rtab.
+
+
+    APPEND INITIAL LINE TO lt_rtab ASSIGNING <ls_rtab>.
+    <ls_rtab>-name = iv_name.
+    GET REFERENCE OF cg_data INTO <ls_rtab>-value.
+
     CALL TRANSFORMATION id
       SOURCE XML mi_xml_doc
-      RESULT data = cg_any.
+      RESULT (lt_rtab).
 
   ENDMETHOD.
 
@@ -211,19 +243,21 @@ CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
            bar TYPE c LENGTH 1,
          END OF ty_less.
 
-    TYPES: BEGIN OF structure,
+    TYPES: BEGIN OF ty_structure,
              foo TYPE c LENGTH 2,
              /sdf/sdf TYPE c LENGTH 5,
-           END OF structure.
+           END OF ty_structure.
 
     TYPES: BEGIN OF ty_more,
              foo TYPE c LENGTH 1,
              bar TYPE c LENGTH 1,
              moo TYPE c LENGTH 1,
-             st TYPE structure,
+             st TYPE ty_structure,
            END OF ty_more.
 
     METHODS:
+      multi FOR TESTING
+        RAISING lcx_exception,
       less_to_more FOR TESTING
         RAISING lcx_exception,
       more_to_less FOR TESTING
@@ -234,6 +268,45 @@ CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
 ENDCLASS.
 
 CLASS ltcl_test IMPLEMENTATION.
+
+  METHOD multi.
+
+    DATA: lo_output TYPE REF TO lcl_xml_output,
+          lo_input  TYPE REF TO lcl_xml_input,
+          ls_less1  TYPE ty_less,
+          ls_more1  TYPE ty_more,
+          ls_less2  TYPE ty_less,
+          ls_more2  TYPE ty_more,
+          lv_xml    TYPE string.
+
+
+    ls_less1-foo = 'Q'.
+    ls_more1-moo = 'A'.
+
+    CREATE OBJECT lo_output.
+    lo_output->add( iv_name = 'LESS'
+                    ig_data = ls_less1 ).
+    lo_output->add( iv_name = 'MORE'
+                    ig_data = ls_more1 ).
+    lv_xml = lo_output->render( ).
+
+    CREATE OBJECT lo_input
+      EXPORTING
+        iv_xml = lv_xml.
+    lo_input->read( EXPORTING iv_name = 'LESS'
+                    CHANGING cg_data = ls_less2 ).
+    lo_input->read( EXPORTING iv_name = 'MORE'
+                    CHANGING cg_data = ls_more2 ).
+
+    cl_abap_unit_assert=>assert_equals(
+        act = ls_less1
+        exp = ls_less2 ).
+
+    cl_abap_unit_assert=>assert_equals(
+        act = ls_more1
+        exp = ls_more2 ).
+
+  ENDMETHOD.
 
   METHOD sequence.
 
@@ -247,9 +320,9 @@ CLASS ltcl_test IMPLEMENTATION.
              foo TYPE c LENGTH 2,
            END OF ty_sequence2.
 
-    DATA: lo_output  TYPE REF TO lcl_xml_output,
-          lo_input  TYPE REF TO lcl_xml_input,
-          lv_xml  TYPE string,
+    DATA: lo_output    TYPE REF TO lcl_xml_output,
+          lo_input     TYPE REF TO lcl_xml_input,
+          lv_xml       TYPE string,
           ls_sequence1 TYPE ty_sequence1,
           ls_sequence2 TYPE ty_sequence2.
 
@@ -258,12 +331,15 @@ CLASS ltcl_test IMPLEMENTATION.
     ls_sequence1-bar = 'C'.
 
     CREATE OBJECT lo_output.
-    lv_xml = lo_output->add( ls_sequence1 ).
+    lo_output->add( iv_name = 'DATA'
+                    ig_data = ls_sequence1 ).
+    lv_xml = lo_output->render( ).
 
     CREATE OBJECT lo_input
       EXPORTING
         iv_xml = lv_xml.
-    lo_input->read( CHANGING cg_any = ls_sequence2 ).
+    lo_input->read( EXPORTING iv_name = 'DATA'
+                    CHANGING cg_data = ls_sequence2 ).
 
     cl_abap_unit_assert=>assert_equals(
         act = ls_sequence2-foo
@@ -273,23 +349,26 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD less_to_more.
 
-    DATA: lo_output  TYPE REF TO lcl_xml_output,
+    DATA: lo_output TYPE REF TO lcl_xml_output,
           lo_input  TYPE REF TO lcl_xml_input,
-          lv_xml  TYPE string,
-          ls_less TYPE ty_less,
-          ls_more TYPE ty_more.
+          lv_xml    TYPE string,
+          ls_less   TYPE ty_less,
+          ls_more   TYPE ty_more.
 
 
     ls_less-foo = 'F'.
     ls_less-bar = 'B'.
 
     CREATE OBJECT lo_output.
-    lv_xml = lo_output->add( ls_less ).
+    lo_output->add( iv_name = 'DATA'
+                    ig_data = ls_less ).
+    lv_xml = lo_output->render( ).
 
     CREATE OBJECT lo_input
       EXPORTING
         iv_xml = lv_xml.
-    lo_input->read( CHANGING cg_any = ls_more ).
+    lo_input->read( EXPORTING iv_name = 'DATA'
+                    CHANGING cg_data = ls_more ).
 
     cl_abap_unit_assert=>assert_equals(
         act = ls_more-foo
@@ -299,11 +378,11 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD more_to_less.
 
-    DATA: lo_output  TYPE REF TO lcl_xml_output,
+    DATA: lo_output TYPE REF TO lcl_xml_output,
           lo_input  TYPE REF TO lcl_xml_input,
-          lv_xml  TYPE string,
-          ls_less TYPE ty_less,
-          ls_more TYPE ty_more.
+          lv_xml    TYPE string,
+          ls_less   TYPE ty_less,
+          ls_more   TYPE ty_more.
 
 
     ls_more-foo = 'F'.
@@ -311,12 +390,15 @@ CLASS ltcl_test IMPLEMENTATION.
     ls_more-st-foo = 'A'.
 
     CREATE OBJECT lo_output.
-    lv_xml = lo_output->add( ls_more ).
+    lo_output->add( iv_name = 'DATA'
+                    ig_data = ls_more ).
+    lv_xml = lo_output->render( ).
 
     CREATE OBJECT lo_input
       EXPORTING
         iv_xml = lv_xml.
-    lo_input->read( CHANGING cg_any = ls_less ).
+    lo_input->read( EXPORTING iv_name = 'DATA'
+                    CHANGING cg_data = ls_less ).
 
     cl_abap_unit_assert=>assert_equals(
         act = ls_less-foo
