@@ -10,49 +10,63 @@ DEFINE _raise.
   write: &1.
 END-OF-DEFINITION.
 
-* REQUIREMENTS:
-* rewrite of lot of the serialization to put all data into one structure
-* or actually dont do it that way?
-
 * todo, how to handle raw XML stuff, like smartforms
 * todo, add minor versionining in constructor
 * todo, error handling for CALL TRANSFORMATION
 * todo, check abapGit xml versions
 
-CLASS lcl_xml DEFINITION FINAL CREATE PUBLIC.
+CLASS lcl_xml DEFINITION ABSTRACT.
 
   PUBLIC SECTION.
     METHODS:
-      constructor
-        IMPORTING iv_xml TYPE string OPTIONAL,
-      build
-        IMPORTING ig_any  TYPE any
-        RETURNING VALUE(rv_xml) TYPE string,
-      parse
-        CHANGING cg_any TYPE any
-        RAISING lcx_exception.
+      constructor.
 
-  PRIVATE SECTION.
-    DATA: mv_xml     TYPE string,
-          mi_ixml    TYPE REF TO if_ixml,
+  PROTECTED SECTION.
+    DATA: mi_ixml    TYPE REF TO if_ixml,
           mi_xml_doc TYPE REF TO if_ixml_document.
-
-    METHODS error
-      IMPORTING ii_parser TYPE REF TO if_ixml_parser
-      RAISING   lcx_exception.
 
     METHODS render
       RETURNING VALUE(rv_string) TYPE string.
+
+    METHODS parse
+      IMPORTING iv_xml TYPE string
+      RAISING lcx_exception.
+
+  PRIVATE SECTION.
+    METHODS error
+      IMPORTING ii_parser TYPE REF TO if_ixml_parser
+      RAISING   lcx_exception.
 
 ENDCLASS.
 
 CLASS lcl_xml IMPLEMENTATION.
 
   METHOD constructor.
-
-    mv_xml = iv_xml.
     mi_ixml = cl_ixml=>create( ).
     mi_xml_doc = mi_ixml->create_document( ).
+  ENDMETHOD.
+
+  METHOD parse.
+
+    DATA: li_stream_factory TYPE REF TO if_ixml_stream_factory,
+          li_istream        TYPE REF TO if_ixml_istream,
+          li_parser         TYPE REF TO if_ixml_parser,
+          li_node           TYPE REF TO if_ixml_node.
+
+
+    ASSERT NOT iv_xml IS INITIAL.
+
+    li_stream_factory = mi_ixml->create_stream_factory( ).
+    li_istream = li_stream_factory->create_istream_string( iv_xml ).
+    li_parser = mi_ixml->create_parser( stream_factory = li_stream_factory
+                                        istream        = li_istream
+                                        document       = mi_xml_doc ).
+    li_parser->set_normalizing( abap_false ).
+    IF li_parser->parse( ) <> 0.
+      error( li_parser ).
+    ENDIF.
+
+    li_istream->close( ).
 
   ENDMETHOD.
 
@@ -71,64 +85,6 @@ CLASS lcl_xml IMPLEMENTATION.
     li_renderer = mi_ixml->create_renderer( ostream  = li_ostream
                                             document = mi_xml_doc ).
     li_renderer->render( ).
-
-  ENDMETHOD.
-
-  METHOD build.
-
-    DATA: li_git  TYPE REF TO if_ixml_element,
-          li_abap TYPE REF TO if_ixml_element.
-
-
-    CALL TRANSFORMATION id
-      SOURCE data = ig_any
-      RESULT XML mi_xml_doc.
-
-    li_abap ?= mi_xml_doc->get_root( )->get_first_child( ).
-    mi_xml_doc->get_root( )->remove_child( li_abap ).
-
-    li_git = mi_xml_doc->create_element( 'abapGit' ).
-    li_git->set_attribute( name = 'version' value = gc_xml_version ). "#EC NOTEXT
-    li_git->append_child( li_abap ).
-    mi_xml_doc->get_root( )->append_child( li_git ).
-
-    rv_xml = render( ).
-
-  ENDMETHOD.
-
-  METHOD parse.
-
-    DATA: li_stream_factory TYPE REF TO if_ixml_stream_factory,
-          li_istream        TYPE REF TO if_ixml_istream,
-          li_parser         TYPE REF TO if_ixml_parser,
-          li_node           TYPE REF TO if_ixml_node,
-          li_git            TYPE REF TO if_ixml_element,
-          li_abap           TYPE REF TO if_ixml_element.
-
-
-    ASSERT NOT mv_xml IS INITIAL.
-
-    li_stream_factory = mi_ixml->create_stream_factory( ).
-    li_istream = li_stream_factory->create_istream_string( mv_xml ).
-    li_parser = mi_ixml->create_parser( stream_factory = li_stream_factory
-                                        istream        = li_istream
-                                        document       = mi_xml_doc ).
-    li_parser->set_normalizing( abap_false ).
-    IF li_parser->parse( ) <> 0.
-      error( li_parser ).
-    ENDIF.
-
-    li_istream->close( ).
-
-    li_git ?= mi_xml_doc->get_root( )->get_first_child( ).
-    li_abap ?= li_git->get_first_child( ).
-
-    mi_xml_doc->get_root( )->remove_child( li_git ).
-    mi_xml_doc->get_root( )->append_child( li_abap ).
-
-    CALL TRANSFORMATION id
-      SOURCE XML mi_xml_doc
-      RESULT data = cg_any.
 
   ENDMETHOD.
 
@@ -164,6 +120,85 @@ CLASS lcl_xml IMPLEMENTATION.
     ENDIF.
 
     _raise 'Error while parsing XML'.
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS lcl_xml_output DEFINITION FINAL INHERITING FROM lcl_xml CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    METHODS:
+      add
+        IMPORTING ig_any TYPE any
+        RETURNING VALUE(rv_xml) TYPE string.
+
+ENDCLASS.
+
+CLASS lcl_xml_output IMPLEMENTATION.
+
+  METHOD add.
+
+    DATA: li_git  TYPE REF TO if_ixml_element,
+          li_abap TYPE REF TO if_ixml_element.
+
+
+    CALL TRANSFORMATION id
+      SOURCE data = ig_any
+             foo = ig_any
+      RESULT XML mi_xml_doc.
+
+    li_abap ?= mi_xml_doc->get_root( )->get_first_child( ).
+    mi_xml_doc->get_root( )->remove_child( li_abap ).
+
+    li_git = mi_xml_doc->create_element( 'abapGit' ).
+    li_git->set_attribute( name = 'version' value = gc_xml_version ). "#EC NOTEXT
+    li_git->append_child( li_abap ).
+    mi_xml_doc->get_root( )->append_child( li_git ).
+
+    rv_xml = render( ).
+
+  ENDMETHOD.
+
+ENDCLASS.
+
+CLASS lcl_xml_input DEFINITION FINAL INHERITING FROM lcl_xml CREATE PUBLIC.
+
+  PUBLIC SECTION.
+    METHODS:
+      constructor
+        IMPORTING iv_xml TYPE string
+        RAISING lcx_exception,
+      read
+        CHANGING cg_any TYPE any
+        RAISING lcx_exception.
+
+ENDCLASS.
+
+CLASS lcl_xml_input IMPLEMENTATION.
+
+  METHOD constructor.
+
+    super->constructor( ).
+    parse( iv_xml ).
+
+  ENDMETHOD.
+
+  METHOD read.
+
+    DATA: li_git            TYPE REF TO if_ixml_element,
+          li_abap           TYPE REF TO if_ixml_element.
+
+
+    li_git ?= mi_xml_doc->get_root( )->get_first_child( ).
+    li_abap ?= li_git->get_first_child( ).
+
+    mi_xml_doc->get_root( )->remove_child( li_git ).
+    mi_xml_doc->get_root( )->append_child( li_abap ).
+
+    CALL TRANSFORMATION id
+      SOURCE XML mi_xml_doc
+      RESULT data = cg_any.
+
   ENDMETHOD.
 
 ENDCLASS.
@@ -212,7 +247,8 @@ CLASS ltcl_test IMPLEMENTATION.
              foo TYPE c LENGTH 2,
            END OF ty_sequence2.
 
-    DATA: lo_xml  TYPE REF TO lcl_xml,
+    DATA: lo_output  TYPE REF TO lcl_xml_output,
+          lo_input  TYPE REF TO lcl_xml_input,
           lv_xml  TYPE string,
           ls_sequence1 TYPE ty_sequence1,
           ls_sequence2 TYPE ty_sequence2.
@@ -221,13 +257,13 @@ CLASS ltcl_test IMPLEMENTATION.
     ls_sequence1-foo = 'AB'.
     ls_sequence1-bar = 'C'.
 
-    CREATE OBJECT lo_xml.
-    lv_xml = lo_xml->build( ls_sequence1 ).
+    CREATE OBJECT lo_output.
+    lv_xml = lo_output->add( ls_sequence1 ).
 
-    CREATE OBJECT lo_xml
+    CREATE OBJECT lo_input
       EXPORTING
         iv_xml = lv_xml.
-    lo_xml->parse( CHANGING cg_any = ls_sequence2 ).
+    lo_input->read( CHANGING cg_any = ls_sequence2 ).
 
     cl_abap_unit_assert=>assert_equals(
         act = ls_sequence2-foo
@@ -237,7 +273,8 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD less_to_more.
 
-    DATA: lo_xml  TYPE REF TO lcl_xml,
+    DATA: lo_output  TYPE REF TO lcl_xml_output,
+          lo_input  TYPE REF TO lcl_xml_input,
           lv_xml  TYPE string,
           ls_less TYPE ty_less,
           ls_more TYPE ty_more.
@@ -246,13 +283,13 @@ CLASS ltcl_test IMPLEMENTATION.
     ls_less-foo = 'F'.
     ls_less-bar = 'B'.
 
-    CREATE OBJECT lo_xml.
-    lv_xml = lo_xml->build( ls_less ).
+    CREATE OBJECT lo_output.
+    lv_xml = lo_output->add( ls_less ).
 
-    CREATE OBJECT lo_xml
+    CREATE OBJECT lo_input
       EXPORTING
         iv_xml = lv_xml.
-    lo_xml->parse( CHANGING cg_any = ls_more ).
+    lo_input->read( CHANGING cg_any = ls_more ).
 
     cl_abap_unit_assert=>assert_equals(
         act = ls_more-foo
@@ -262,7 +299,8 @@ CLASS ltcl_test IMPLEMENTATION.
 
   METHOD more_to_less.
 
-    DATA: lo_xml  TYPE REF TO lcl_xml,
+    DATA: lo_output  TYPE REF TO lcl_xml_output,
+          lo_input  TYPE REF TO lcl_xml_input,
           lv_xml  TYPE string,
           ls_less TYPE ty_less,
           ls_more TYPE ty_more.
@@ -272,13 +310,13 @@ CLASS ltcl_test IMPLEMENTATION.
     ls_more-bar = 'B'.
     ls_more-st-foo = 'A'.
 
-    CREATE OBJECT lo_xml.
-    lv_xml = lo_xml->build( ls_more ).
+    CREATE OBJECT lo_output.
+    lv_xml = lo_output->add( ls_more ).
 
-    CREATE OBJECT lo_xml
+    CREATE OBJECT lo_input
       EXPORTING
         iv_xml = lv_xml.
-    lo_xml->parse( CHANGING cg_any = ls_less ).
+    lo_input->read( CHANGING cg_any = ls_less ).
 
     cl_abap_unit_assert=>assert_equals(
         act = ls_less-foo
