@@ -1,20 +1,41 @@
 REPORT zxml.
 
-CONSTANTS: gc_xml_version  TYPE string VALUE 'v0.next'.
+* todo, how to handle raw XML stuff, like smartforms
 
-CLASS lcx_exception DEFINITION INHERITING FROM cx_static_check FINAL.
-ENDCLASS.
+CONSTANTS: gc_xml_version TYPE string VALUE 'v1.0.0',
+           gc_abap_version TYPE string VALUE 'v1.0.0'.      "#EC NOTEXT
 
 DEFINE _raise.
-  write: &1.
-  RAISE EXCEPTION TYPE lcx_exception.                       "#EC NOTEXT
+  RAISE EXCEPTION TYPE lcx_exception
+    EXPORTING
+      iv_text = &1.                                         "#EC NOTEXT
 END-OF-DEFINITION.
 
-* todo, how to handle raw XML stuff, like smartforms
-* todo, add minor versionining in constructor?
-* todo, error handling for CALL TRANSFORMATION
-* todo, check abapGit xml versions
-* todo, normalize?
+CLASS lcx_exception DEFINITION INHERITING FROM cx_static_check FINAL.
+
+  PUBLIC SECTION.
+    DATA mv_text TYPE string.
+
+    METHODS constructor
+      IMPORTING iv_text     TYPE string
+                ix_previous TYPE REF TO cx_root OPTIONAL.
+
+  PRIVATE SECTION.
+    DATA mx_previous TYPE REF TO cx_root.
+
+ENDCLASS.                    "CX_LOCAL_EXCEPTION DEFINITION
+
+CLASS lcx_exception IMPLEMENTATION.
+
+  METHOD constructor.
+    super->constructor( ).
+    mv_text = iv_text.
+    mx_previous = previous.
+  ENDMETHOD.                    "CONSTRUCTOR
+
+ENDCLASS.
+
+***********************************************************************
 
 CLASS lcl_xml DEFINITION ABSTRACT.
 
@@ -26,17 +47,24 @@ CLASS lcl_xml DEFINITION ABSTRACT.
     DATA: mi_ixml    TYPE REF TO if_ixml,
           mi_xml_doc TYPE REF TO if_ixml_document.
 
+    CONSTANTS: c_abapgit_tag TYPE string VALUE 'abapGit'.
+
     METHODS to_xml
+      IMPORTING iv_normalize  TYPE sap_bool DEFAULT abap_true
       RETURNING VALUE(rv_xml) TYPE string.
 
     METHODS parse
-      IMPORTING iv_xml TYPE string
+      IMPORTING iv_normalize TYPE abap_bool DEFAULT abap_true
+        iv_xml TYPE string
       RAISING lcx_exception.
 
   PRIVATE SECTION.
     METHODS error
       IMPORTING ii_parser TYPE REF TO if_ixml_parser
       RAISING   lcx_exception.
+
+    METHODS display_xml_error
+      RAISING lcx_exception.
 
 ENDCLASS.
 
@@ -51,6 +79,8 @@ CLASS lcl_xml IMPLEMENTATION.
 
     DATA: li_stream_factory TYPE REF TO if_ixml_stream_factory,
           li_istream        TYPE REF TO if_ixml_istream,
+          li_element        TYPE REF TO if_ixml_element,
+          li_version        TYPE REF TO if_ixml_node,
           li_parser         TYPE REF TO if_ixml_parser.
 
 
@@ -61,12 +91,36 @@ CLASS lcl_xml IMPLEMENTATION.
     li_parser = mi_ixml->create_parser( stream_factory = li_stream_factory
                                         istream        = li_istream
                                         document       = mi_xml_doc ).
-    li_parser->set_normalizing( abap_false ).
+    li_parser->set_normalizing( iv_normalize ).
     IF li_parser->parse( ) <> 0.
       error( li_parser ).
     ENDIF.
 
     li_istream->close( ).
+
+*    li_element = mi_xml_doc->find_from_name( depth = 0 name = c_abapgit_tag ).
+*    li_version = li_element->if_ixml_node~get_attributes( )->get_named_item_ns( 'version' ).
+*    IF li_version->get_value( ) <> gc_xml_version.
+*      display_xml_error( ).
+*    ENDIF.
+
+  ENDMETHOD.
+
+  METHOD display_xml_error.
+
+    DATA: lv_version TYPE string.
+
+
+    lv_version = |abapGit version: { gc_abap_version }|.
+
+    CALL FUNCTION 'POPUP_TO_INFORM'
+      EXPORTING
+        titel = 'abapGit XML version mismatch'
+        txt1  = 'abapGit XML version mismatch'
+        txt2  = 'See https://github.com/larshp/abapGit/wiki/XML-Mismatch'
+        txt3  = lv_version. "#EC NOTEXT
+
+    _raise 'XML error'.
 
   ENDMETHOD.
 
@@ -84,6 +138,8 @@ CLASS lcl_xml IMPLEMENTATION.
 
     li_renderer = mi_ixml->create_renderer( ostream  = li_ostream
                                             document = mi_xml_doc ).
+    li_renderer->set_normalizing( iv_normalize ).
+
     li_renderer->render( ).
 
   ENDMETHOD.
@@ -132,6 +188,7 @@ CLASS lcl_xml_output DEFINITION FINAL INHERITING FROM lcl_xml CREATE PUBLIC.
         IMPORTING iv_name TYPE clike
                   ig_data TYPE any,
       render
+        IMPORTING iv_normalize TYPE sap_bool DEFAULT abap_true
         RETURNING VALUE(rv_xml) TYPE string.
 
   PRIVATE SECTION.
@@ -154,6 +211,7 @@ CLASS lcl_xml_output IMPLEMENTATION.
   METHOD render.
 
     DATA: li_git  TYPE REF TO if_ixml_element,
+          lv_version TYPE string,
           li_abap TYPE REF TO if_ixml_element.
 
 
@@ -164,12 +222,12 @@ CLASS lcl_xml_output IMPLEMENTATION.
     li_abap ?= mi_xml_doc->get_root( )->get_first_child( ).
     mi_xml_doc->get_root( )->remove_child( li_abap ).
 
-    li_git = mi_xml_doc->create_element( 'abapGit' ).
+    li_git = mi_xml_doc->create_element( c_abapgit_tag ).
     li_git->set_attribute( name = 'version' value = gc_xml_version ). "#EC NOTEXT
     li_git->append_child( li_abap ).
     mi_xml_doc->get_root( )->append_child( li_git ).
 
-    rv_xml = to_xml( ).
+    rv_xml = to_xml( iv_normalize ).
 
   ENDMETHOD.
 
@@ -205,11 +263,11 @@ CLASS lcl_xml_input IMPLEMENTATION.
   METHOD fix_xml.
 
     DATA: li_git            TYPE REF TO if_ixml_element,
-          li_abap           TYPE REF TO if_ixml_element.
+          li_abap           TYPE REF TO if_ixml_node.
 
 
     li_git ?= mi_xml_doc->get_root( )->get_first_child( ).
-    li_abap ?= li_git->get_first_child( ).
+    li_abap = li_git->get_first_child( ).
 
     mi_xml_doc->get_root( )->remove_child( li_git ).
     mi_xml_doc->get_root( )->append_child( li_abap ).
@@ -218,7 +276,9 @@ CLASS lcl_xml_input IMPLEMENTATION.
 
   METHOD read.
 
-    DATA: lt_rtab TYPE abap_trans_resbind_tab.
+    DATA: lv_text TYPE string,
+          lx_error TYPE REF TO cx_transformation_error,
+          lt_rtab TYPE abap_trans_resbind_tab.
 
     FIELD-SYMBOLS: <ls_rtab> LIKE LINE OF lt_rtab.
 
@@ -227,15 +287,20 @@ CLASS lcl_xml_input IMPLEMENTATION.
     <ls_rtab>-name = iv_name.
     GET REFERENCE OF cg_data INTO <ls_rtab>-value.
 
-    CALL TRANSFORMATION id
-      SOURCE XML mi_xml_doc
-      RESULT (lt_rtab).
+    TRY.
+        CALL TRANSFORMATION id
+          SOURCE XML mi_xml_doc
+          RESULT (lt_rtab).
+      CATCH cx_transformation_error INTO lx_error.
+        lv_text = lx_error->if_message~get_text( ).
+        _raise lv_text.
+    ENDTRY.
 
   ENDMETHOD.
 
 ENDCLASS.
 
-CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
+CLASS ltcl_xml DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
 
   PRIVATE SECTION.
     TYPES: BEGIN OF ty_less,
@@ -263,11 +328,42 @@ CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
       more_to_less FOR TESTING
         RAISING lcx_exception,
       sequence FOR TESTING
+        RAISING lcx_exception,
+      transformation_error FOR TESTING
         RAISING lcx_exception.
 
 ENDCLASS.
 
-CLASS ltcl_test IMPLEMENTATION.
+CLASS ltcl_xml IMPLEMENTATION.
+
+  METHOD transformation_error.
+
+    DATA: lo_input TYPE REF TO lcl_xml_input,
+          ls_less  TYPE ty_less,
+          lv_xml   TYPE string.
+
+
+    lv_xml = |<?xml version="1.0" encoding="utf-16"?>\n| &&
+      |<abapGit version="v1.0.0">\n| &&
+      |<asx:foobar xmlns:asx="http://www.sap.com/abapxml" version="1.0">\n| &&
+      |<asx:values>\n| &&
+      |<DATA><FOO>A</FOO><BAR>C</BAR></DATA>\n| &&
+      |</asx:values>\n| &&
+      |</asx:foobar>\n| &&
+      |</abapGit>\n|.
+
+    CREATE OBJECT lo_input
+      EXPORTING
+        iv_xml = lv_xml.
+
+    TRY.
+        lo_input->read( EXPORTING iv_name = 'DATA'
+                        CHANGING cg_data = ls_less ).
+        cl_abap_unit_assert=>fail( ).
+      CATCH lcx_exception.
+    ENDTRY.
+
+  ENDMETHOD.
 
   METHOD multi.
 
