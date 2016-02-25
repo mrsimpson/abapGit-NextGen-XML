@@ -98,11 +98,11 @@ CLASS lcl_xml IMPLEMENTATION.
 
     li_istream->close( ).
 
-*    li_element = mi_xml_doc->find_from_name( depth = 0 name = c_abapgit_tag ).
-*    li_version = li_element->if_ixml_node~get_attributes( )->get_named_item_ns( 'version' ).
-*    IF li_version->get_value( ) <> gc_xml_version.
-*      display_xml_error( ).
-*    ENDIF.
+    li_element = mi_xml_doc->find_from_name( depth = 0 name = c_abapgit_tag ).
+    li_version = li_element->if_ixml_node~get_attributes( )->get_named_item_ns( 'version' ).
+    IF li_version->get_value( ) <> gc_xml_version.
+      display_xml_error( ).
+    ENDIF.
 
   ENDMETHOD.
 
@@ -211,7 +211,6 @@ CLASS lcl_xml_output IMPLEMENTATION.
   METHOD render.
 
     DATA: li_git  TYPE REF TO if_ixml_element,
-          lv_version TYPE string,
           li_abap TYPE REF TO if_ixml_element.
 
 
@@ -360,7 +359,7 @@ CLASS ltcl_xml IMPLEMENTATION.
         lo_input->read( EXPORTING iv_name = 'DATA'
                         CHANGING cg_data = ls_less ).
         cl_abap_unit_assert=>fail( ).
-      CATCH lcx_exception.
+      CATCH lcx_exception ##NO_HANDLER.
     ENDTRY.
 
   ENDMETHOD.
