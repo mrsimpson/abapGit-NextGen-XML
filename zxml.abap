@@ -12,6 +12,7 @@ END-OF-DEFINITION.
 
 * REQUIREMENTS:
 * rewrite of lot of the serialization to put all data into one structure
+* or actually dont do it that way?
 
 * todo, how to handle raw XML stuff, like smartforms
 * todo, add minor versionining in constructor
@@ -170,13 +171,14 @@ ENDCLASS.
 CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
 
   PRIVATE SECTION.
-      TYPES: BEGIN OF ty_less,
-             foo TYPE c LENGTH 1,
-             bar TYPE c LENGTH 1,
-           END OF ty_less.
+    TYPES: BEGIN OF ty_less,
+           foo TYPE c LENGTH 1,
+           bar TYPE c LENGTH 1,
+         END OF ty_less.
 
     TYPES: BEGIN OF structure,
              foo TYPE c LENGTH 2,
+             /sdf/sdf TYPE c LENGTH 5,
            END OF structure.
 
     TYPES: BEGIN OF ty_more,
@@ -190,11 +192,48 @@ CLASS ltcl_test DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
       less_to_more FOR TESTING
         RAISING lcx_exception,
       more_to_less FOR TESTING
+        RAISING lcx_exception,
+      sequence FOR TESTING
         RAISING lcx_exception.
 
 ENDCLASS.
 
 CLASS ltcl_test IMPLEMENTATION.
+
+  METHOD sequence.
+
+    TYPES: BEGIN OF ty_sequence1,
+             foo TYPE c LENGTH 2,
+             bar TYPE c LENGTH 1,
+           END OF ty_sequence1.
+
+    TYPES: BEGIN OF ty_sequence2,
+             bar TYPE c LENGTH 1,
+             foo TYPE c LENGTH 2,
+           END OF ty_sequence2.
+
+    DATA: lo_xml  TYPE REF TO lcl_xml,
+          lv_xml  TYPE string,
+          ls_sequence1 TYPE ty_sequence1,
+          ls_sequence2 TYPE ty_sequence2.
+
+
+    ls_sequence1-foo = 'AB'.
+    ls_sequence1-bar = 'C'.
+
+    CREATE OBJECT lo_xml.
+    lv_xml = lo_xml->build( ls_sequence1 ).
+
+    CREATE OBJECT lo_xml
+      EXPORTING
+        iv_xml = lv_xml.
+    lo_xml->parse( CHANGING cg_any = ls_sequence2 ).
+
+    cl_abap_unit_assert=>assert_equals(
+        act = ls_sequence2-foo
+        exp = 'AB' ).
+
+  ENDMETHOD.
 
   METHOD less_to_more.
 
