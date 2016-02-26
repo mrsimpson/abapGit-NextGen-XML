@@ -572,10 +572,10 @@ CLASS ltcl_transformation DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SH
 
   PRIVATE SECTION.
     METHODS:
-          deviating_structures FOR TESTING
-            RAISING lcx_exception,
-          deviating_tables FOR TESTING
-            RAISING lcx_exception.
+      deviating_structures FOR TESTING
+        RAISING lcx_exception,
+      deviating_tables FOR TESTING
+        RAISING lcx_exception.
 
 ENDCLASS.
 
@@ -628,12 +628,21 @@ CLASS ltcl_transformation IMPLEMENTATION.
 
     cl_abap_unit_assert=>assert_equals( exp = ls_shorter-chars act = 'AA' ).
 
+    DATA ls_common TYPE ty_s_common.
+    CALL TRANSFORMATION id
+     OPTIONS value_handling = 'accept_data_loss'
+     SOURCE XML lv_xml
+     RESULT data = ls_common.
+
+    cl_abap_unit_assert=>assert_equals( exp = ls_common-int act = ls_longer-int ).
+
   ENDMETHOD.
 
   METHOD deviating_tables.
     TYPES: BEGIN OF ty_s_common,
              int    TYPE i,
              char10 TYPE c LENGTH 10,
+             ssss   type string,
            END OF ty_s_common,
 
            BEGIN OF ty_s_shorter.
@@ -658,6 +667,7 @@ CLASS ltcl_transformation IMPLEMENTATION.
     ls_shorter-char10 = 'Namaste'.
     ls_shorter-int    = 42.
     ls_shorter-chars  = 'AA'.
+    ls_shorter-ssss   = 'String'.
     INSERT ls_shorter INTO TABLE lt_shorter.
 
     DATA lv_xml TYPE string.
@@ -673,6 +683,28 @@ CLASS ltcl_transformation IMPLEMENTATION.
         act = lt_shorter[ 1 ]-chars
         exp = lt_longer[ 1 ]-chars ).
 
+    DATA lt_common TYPE STANDARD TABLE OF ty_s_common WITH DEFAULT KEY. "Also works with DDIC-based structure
+    CALL TRANSFORMATION id
+*     OPTIONS value_handling = 'accept_data_loss'
+     SOURCE XML lv_xml
+     RESULT data = lt_common.
+
+    cl_abap_unit_assert=>assert_equals(
+            act = lt_common[ 1 ]-int
+            exp = lt_longer[ 1 ]-int ).
+
+    CALL TRANSFORMATION id
+     SOURCE data = lt_common
+     RESULT XML lv_xml.
+
+    CALL TRANSFORMATION id
+*     OPTIONS value_handling = 'accept_data_loss'
+    SOURCE XML lv_xml
+    RESULT data = lt_longer.
+
+    cl_abap_unit_assert=>assert_equals(
+           act = lt_common[ 1 ]-int
+           exp = lt_longer[ 1 ]-int ).
   ENDMETHOD.
 
 ENDCLASS.
