@@ -288,6 +288,7 @@ CLASS lcl_xml_input IMPLEMENTATION.
 
     TRY.
         CALL TRANSFORMATION id
+          OPTIONS value_handling = 'accept_data_loss'
           SOURCE XML mi_xml_doc
           RESULT (lt_rtab).
       CATCH cx_transformation_error INTO lx_error.
@@ -329,6 +330,10 @@ CLASS ltcl_xml DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
       sequence FOR TESTING
         RAISING lcx_exception,
       transformation_error FOR TESTING
+        RAISING lcx_exception,
+      char10_to_char20 FOR TESTING
+        RAISING lcx_exception,
+      char20_to_char10 FOR TESTING
         RAISING lcx_exception.
 
 ENDCLASS.
@@ -480,8 +485,8 @@ CLASS ltcl_xml IMPLEMENTATION.
           ls_more   TYPE ty_more.
 
 
-    ls_more-foo = 'F'.
-    ls_more-bar = 'B'.
+    ls_more-foo    = 'F'.
+    ls_more-bar    = 'B'.
     ls_more-st-foo = 'A'.
 
     CREATE OBJECT lo_output.
@@ -498,6 +503,66 @@ CLASS ltcl_xml IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
         act = ls_less-foo
         exp = 'F' ).
+
+  ENDMETHOD.
+
+  METHOD char10_to_char20.
+
+    CONSTANTS: c_value TYPE c LENGTH 10 VALUE 'ABAP_ROCKS'.
+
+    DATA: lo_output TYPE REF TO lcl_xml_output,
+          lo_input  TYPE REF TO lcl_xml_input,
+          lv_xml    TYPE string,
+          lv_char10 TYPE c LENGTH 10,
+          lv_char20 TYPE c LENGTH 20.
+
+
+    lv_char10 = c_value.
+
+    CREATE OBJECT lo_output.
+    lo_output->add( iv_name = 'DATA'
+                    ig_data = lv_char10 ).
+    lv_xml = lo_output->render( ).
+
+    CREATE OBJECT lo_input
+      EXPORTING
+        iv_xml = lv_xml.
+    lo_input->read( EXPORTING iv_name = 'DATA'
+                    CHANGING cg_data = lv_char20 ).
+
+    cl_abap_unit_assert=>assert_equals(
+        act = lv_char20
+        exp = c_value ).
+
+  ENDMETHOD.
+
+  METHOD char20_to_char10.
+
+    CONSTANTS: c_value TYPE c LENGTH 20 VALUE 'ABAP_ROCKS123456'.
+
+    DATA: lo_output TYPE REF TO lcl_xml_output,
+          lo_input  TYPE REF TO lcl_xml_input,
+          lv_xml    TYPE string,
+          lv_char10 TYPE c LENGTH 10,
+          lv_char20 TYPE c LENGTH 20.
+
+
+    lv_char20 = c_value.
+
+    CREATE OBJECT lo_output.
+    lo_output->add( iv_name = 'DATA'
+                    ig_data = lv_char20 ).
+    lv_xml = lo_output->render( ).
+
+    CREATE OBJECT lo_input
+      EXPORTING
+        iv_xml = lv_xml.
+    lo_input->read( EXPORTING iv_name = 'DATA'
+                    CHANGING cg_data = lv_char10 ).
+
+    cl_abap_unit_assert=>assert_equals(
+        act = lv_char10
+        exp = c_value(10) ).
 
   ENDMETHOD.
 
