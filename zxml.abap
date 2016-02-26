@@ -334,10 +334,6 @@ CLASS ltcl_xml DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
       char10_to_char20 FOR TESTING
         RAISING lcx_exception,
       char20_to_char10 FOR TESTING
-        RAISING lcx_exception,
-      deviating_structures FOR TESTING
-        RAISING lcx_exception,
-      deviating_tables FOR TESTING
         RAISING lcx_exception.
 
 ENDCLASS.
@@ -570,6 +566,21 @@ CLASS ltcl_xml IMPLEMENTATION.
 
   ENDMETHOD.
 
+ENDCLASS.
+
+CLASS ltcl_transformation DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
+
+  PRIVATE SECTION.
+    METHODS:
+          deviating_structures FOR TESTING
+            RAISING lcx_exception,
+          deviating_tables FOR TESTING
+            RAISING lcx_exception.
+
+ENDCLASS.
+
+CLASS ltcl_transformation IMPLEMENTATION.
+
   METHOD deviating_structures.
     TYPES: BEGIN OF ty_s_common,
              int    TYPE i,
@@ -611,6 +622,7 @@ CLASS ltcl_xml IMPLEMENTATION.
      RESULT XML lv_xml.
 
     CALL TRANSFORMATION id
+     OPTIONS value_handling = 'accept_data_loss'
      SOURCE XML lv_xml
      RESULT data = ls_shorter.
 
@@ -650,12 +662,16 @@ CLASS ltcl_xml IMPLEMENTATION.
 
     DATA lv_xml TYPE string.
     CALL TRANSFORMATION id
-     SOURCE data = ls_shorter
+     SOURCE data = lt_shorter
      RESULT XML lv_xml.
 
     CALL TRANSFORMATION id
      SOURCE XML lv_xml
      RESULT data = lt_longer.
+
+    cl_abap_unit_assert=>assert_equals(
+        act = lt_longer[ 1 ]-chars
+        exp = lt_longer[ 1 ]-chars ).
 
   ENDMETHOD.
 
