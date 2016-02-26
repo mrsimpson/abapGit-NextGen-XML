@@ -2,7 +2,7 @@ REPORT zxml.
 
 * todo, how to handle raw XML stuff, like smartforms
 
-CONSTANTS: gc_xml_version TYPE string VALUE 'v1.0.0',
+CONSTANTS: gc_xml_version  TYPE string VALUE 'v1.0.0',
            gc_abap_version TYPE string VALUE 'v1.0.0'.      "#EC NOTEXT
 
 DEFINE _raise.
@@ -55,8 +55,8 @@ CLASS lcl_xml DEFINITION ABSTRACT.
 
     METHODS parse
       IMPORTING iv_normalize TYPE abap_bool DEFAULT abap_true
-        iv_xml TYPE string
-      RAISING lcx_exception.
+                iv_xml       TYPE string
+      RAISING   lcx_exception.
 
   PRIVATE SECTION.
     METHODS error
@@ -188,7 +188,7 @@ CLASS lcl_xml_output DEFINITION FINAL INHERITING FROM lcl_xml CREATE PUBLIC.
         IMPORTING iv_name TYPE clike
                   ig_data TYPE any,
       render
-        IMPORTING iv_normalize TYPE sap_bool DEFAULT abap_true
+        IMPORTING iv_normalize  TYPE sap_bool DEFAULT abap_true
         RETURNING VALUE(rv_xml) TYPE string.
 
   PRIVATE SECTION.
@@ -238,11 +238,11 @@ CLASS lcl_xml_input DEFINITION FINAL INHERITING FROM lcl_xml CREATE PUBLIC.
     METHODS:
       constructor
         IMPORTING iv_xml TYPE clike
-        RAISING lcx_exception,
+        RAISING   lcx_exception,
       read
         IMPORTING iv_name TYPE clike
-        CHANGING cg_data TYPE any
-        RAISING lcx_exception.
+        CHANGING  cg_data TYPE any
+        RAISING   lcx_exception.
 
   PRIVATE SECTION.
     METHODS: fix_xml.
@@ -261,8 +261,8 @@ CLASS lcl_xml_input IMPLEMENTATION.
 
   METHOD fix_xml.
 
-    DATA: li_git            TYPE REF TO if_ixml_element,
-          li_abap           TYPE REF TO if_ixml_node.
+    DATA: li_git  TYPE REF TO if_ixml_element,
+          li_abap TYPE REF TO if_ixml_node.
 
 
     li_git ?= mi_xml_doc->get_root( )->get_first_child( ).
@@ -275,9 +275,9 @@ CLASS lcl_xml_input IMPLEMENTATION.
 
   METHOD read.
 
-    DATA: lv_text TYPE string,
+    DATA: lv_text  TYPE string,
           lx_error TYPE REF TO cx_transformation_error,
-          lt_rtab TYPE abap_trans_resbind_tab.
+          lt_rtab  TYPE abap_trans_resbind_tab.
 
     FIELD-SYMBOLS: <ls_rtab> LIKE LINE OF lt_rtab.
 
@@ -304,12 +304,12 @@ CLASS ltcl_xml DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
 
   PRIVATE SECTION.
     TYPES: BEGIN OF ty_less,
-           foo TYPE c LENGTH 1,
-           bar TYPE c LENGTH 1,
-         END OF ty_less.
+             foo TYPE c LENGTH 1,
+             bar TYPE c LENGTH 1,
+           END OF ty_less.
 
     TYPES: BEGIN OF ty_structure,
-             foo TYPE c LENGTH 2,
+             foo      TYPE c LENGTH 2,
              /sdf/sdf TYPE c LENGTH 5,
            END OF ty_structure.
 
@@ -317,7 +317,7 @@ CLASS ltcl_xml DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
              foo TYPE c LENGTH 1,
              bar TYPE c LENGTH 1,
              moo TYPE c LENGTH 1,
-             st TYPE ty_structure,
+             st  TYPE ty_structure,
            END OF ty_more.
 
     METHODS:
@@ -334,6 +334,10 @@ CLASS ltcl_xml DEFINITION FOR TESTING RISK LEVEL HARMLESS DURATION SHORT FINAL.
       char10_to_char20 FOR TESTING
         RAISING lcx_exception,
       char20_to_char10 FOR TESTING
+        RAISING lcx_exception,
+      deviating_structures FOR TESTING
+        RAISING lcx_exception,
+      deviating_tables FOR TESTING
         RAISING lcx_exception.
 
 ENDCLASS.
@@ -563,6 +567,95 @@ CLASS ltcl_xml IMPLEMENTATION.
     cl_abap_unit_assert=>assert_equals(
         act = lv_char10
         exp = c_value(10) ).
+
+  ENDMETHOD.
+
+  METHOD deviating_structures.
+    TYPES: BEGIN OF ty_s_common,
+             int    TYPE i,
+             char10 TYPE c LENGTH 10,
+           END OF ty_s_common,
+
+           BEGIN OF ty_s_shorter.
+            INCLUDE TYPE ty_s_common.
+    TYPES :     chars TYPE c LENGTH 2,
+                END OF ty_s_shorter,
+
+                BEGIN OF ty_s_longer.
+            INCLUDE TYPE ty_s_common.
+    TYPES :     chars TYPE c LENGTH 10,
+                END OF ty_s_longer.
+
+
+    DATA ls_shorter  TYPE ty_s_shorter.
+    DATA ls_longer   TYPE ty_s_longer.
+
+    ls_shorter-char10 = 'Namaste'.
+    ls_shorter-int    = 42.
+    ls_shorter-chars  = 'AA'.
+
+    DATA lv_xml TYPE string.
+    CALL TRANSFORMATION id
+     SOURCE data = ls_shorter
+     RESULT XML lv_xml.
+
+    CALL TRANSFORMATION id
+     SOURCE XML lv_xml
+     RESULT data = ls_longer.
+
+    cl_abap_unit_assert=>assert_equals( exp = ls_shorter-chars act = ls_longer-chars ).
+
+    ls_longer-chars = 'AAAAAAAAAAAA'.
+    CALL TRANSFORMATION id
+     SOURCE data = ls_longer
+     RESULT XML lv_xml.
+
+    CALL TRANSFORMATION id
+     SOURCE XML lv_xml
+     RESULT data = ls_shorter.
+
+    cl_abap_unit_assert=>assert_equals( exp = ls_shorter-chars act = 'AA' ).
+
+  ENDMETHOD.
+
+  METHOD deviating_tables.
+    TYPES: BEGIN OF ty_s_common,
+             int    TYPE i,
+             char10 TYPE c LENGTH 10,
+           END OF ty_s_common,
+
+           BEGIN OF ty_s_shorter.
+            INCLUDE TYPE ty_s_common.
+    TYPES :     chars TYPE c LENGTH 2,
+                END OF ty_s_shorter,
+
+                BEGIN OF ty_s_longer.
+            INCLUDE TYPE ty_s_common.
+    TYPES :     chars TYPE c LENGTH 10,
+                END OF ty_s_longer,
+
+                ty_t_shorter TYPE STANDARD TABLE OF ty_s_shorter WITH DEFAULT KEY,
+                ty_t_longer  TYPE STANDARD TABLE OF ty_s_longer WITH DEFAULT KEY.
+
+
+    DATA lt_shorter  TYPE ty_t_shorter.
+    DATA ls_shorter  TYPE ty_s_shorter.
+    DATA lt_longer   TYPE ty_t_longer.
+    DATA ls_longer   TYPE ty_s_longer.
+
+    ls_shorter-char10 = 'Namaste'.
+    ls_shorter-int    = 42.
+    ls_shorter-chars  = 'AA'.
+    INSERT ls_shorter INTO TABLE lt_shorter.
+
+    DATA lv_xml TYPE string.
+    CALL TRANSFORMATION id
+     SOURCE data = ls_shorter
+     RESULT XML lv_xml.
+
+    CALL TRANSFORMATION id
+     SOURCE XML lv_xml
+     RESULT data = lt_longer.
 
   ENDMETHOD.
 
