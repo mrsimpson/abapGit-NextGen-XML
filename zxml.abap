@@ -670,7 +670,7 @@ CLASS ltcl_transformation IMPLEMENTATION.
      RESULT data = lt_longer.
 
     cl_abap_unit_assert=>assert_equals(
-        act = lt_longer[ 1 ]-chars
+        act = lt_shorter[ 1 ]-chars
         exp = lt_longer[ 1 ]-chars ).
 
   ENDMETHOD.
